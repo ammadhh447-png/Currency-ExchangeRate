@@ -11,7 +11,7 @@ export function LandingNavbar() {
         <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 shadow-lg shadow-blue-600/25">
           <Globe className="size-5 text-white" />
         </div>
-        <span className="truncate text-lg font-bold">ExchangeHub</span>
+        <span className="truncate text-lg font-bold text-white">ExchangeHub</span>
       </Link>
 
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
