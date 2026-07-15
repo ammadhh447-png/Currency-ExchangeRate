@@ -34,6 +34,10 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+Deployment:
+FOR LIVE DEMO YOU CAN CLICK TO THE LINK 
+https://currency-exchange-rate-indol.vercel.app/ 
+
 ```bash
 npm run build   # production build
 npm run start   # serve production build
