@@ -1,14 +1,69 @@
 import type {
   ExchangeRatesResponse,
   HistoricalRatesResponse,
+  RatesMetadataResponse,
   TimePeriod,
 } from "@/lib/types/exchange";
 import { getPeriodDays } from "@/lib/utils/currency";
 import { format, subDays } from "date-fns";
 
 const ER_API = "https://open.er-api.com/v6";
+const EXCHANGE_FUN_API = "https://api.exchangerate.fun";
 const FRANKFURTER_API = "https://api.frankfurter.app";
 const FAWAZ_API = "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api";
+
+function normalizeRatesResponse(
+  base: string,
+  rates: Record<string, number>,
+  timestamp?: number
+): ExchangeRatesResponse {
+  const unix = timestamp ?? Math.floor(Date.now() / 1000);
+  return {
+    result: "success",
+    base_code: base,
+    time_last_update_unix: unix,
+    time_last_update_utc: new Date(unix * 1000).toUTCString(),
+    rates: { [base]: 1, ...rates },
+  };
+}
+
+async function fetchExchangeFunLatest(base: string): Promise<ExchangeRatesResponse> {
+  const res = await fetch(`${EXCHANGE_FUN_API}/latest?base=${base}`, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error("exchangerate.fun fetch failed");
+
+  const data = (await res.json()) as {
+    base: string;
+    timestamp: number;
+    rates: Record<string, number>;
+  };
+
+  if (!data.rates || Object.keys(data.rates).length === 0) {
+    throw new Error("exchangerate.fun returned empty rates");
+  }
+
+  return normalizeRatesResponse(data.base ?? base, data.rates, data.timestamp);
+}
+
+async function fetchErApiLatest(
+  base: string,
+  options?: { noCache?: boolean }
+): Promise<ExchangeRatesResponse> {
+  const fetchOptions = options?.noCache
+    ? { cache: "no-store" as RequestCache }
+    : { next: { revalidate: 3600 } };
+
+  const res = await fetch(`${ER_API}/latest/${base}`, fetchOptions);
+  if (!res.ok) throw new Error("open.er-api fetch failed");
+
+  const data = (await res.json()) as ExchangeRatesResponse;
+  if (data.result !== "success" || !data.rates) {
+    throw new Error("Invalid open.er-api response");
+  }
+
+  return data;
+}
 
 function getSampledDates(period: TimePeriod): string[] {
   const days = getPeriodDays(period);
@@ -123,26 +178,22 @@ export async function fetchLatestRates(
   base = "USD",
   options?: { noCache?: boolean }
 ): Promise<ExchangeRatesResponse> {
-  const fetchOptions = options?.noCache
-    ? { cache: "no-store" as RequestCache }
-    : { next: { revalidate: 3600 } };
+  const sources = [
+    () => fetchExchangeFunLatest(base),
+    () => fetchErApiLatest(base, options),
+  ];
 
   let lastError: Error | null = null;
 
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const res = await fetch(`${ER_API}/latest/${base}`, fetchOptions);
-      if (!res.ok) throw new Error("Failed to fetch exchange rates");
-
-      const data = (await res.json()) as ExchangeRatesResponse;
-      if (data.result === "success" && data.rates) {
-        return data;
-      }
-      throw new Error("Invalid exchange rates response");
-    } catch (err) {
-      lastError = err instanceof Error ? err : new Error("Unknown error");
-      if (attempt === 0) {
-        await new Promise((resolve) => setTimeout(resolve, 400));
+  for (const source of sources) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await source();
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error("Unknown error");
+        if (attempt === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
       }
     }
   }
@@ -160,6 +211,97 @@ export async function fetchHistoricalRates(
   } catch {
     return fetchFawazHistorical(from, to, period);
   }
+}
+
+function computeVolatilityFromSeries(values: number[]): number {
+  if (values.length < 2) return 0.00015;
+
+  const returns: number[] = [];
+  for (let i = 1; i < values.length; i++) {
+    if (values[i - 1] !== 0) {
+      returns.push((values[i] - values[i - 1]) / values[i - 1]);
+    }
+  }
+
+  if (returns.length === 0) return 0.00015;
+
+  const mean = returns.reduce((sum, value) => sum + value, 0) / returns.length;
+  const variance =
+    returns.reduce((sum, value) => sum + (value - mean) ** 2, 0) / returns.length;
+
+  return Math.max(Math.sqrt(variance), 0.00008);
+}
+
+export async function fetchRatesMetadata(base = "USD"): Promise<RatesMetadataResponse> {
+  const latest = await fetchLatestRates(base, { noCache: true });
+  const codes = Object.keys(latest.rates).filter((code) => code !== base);
+  const baseLower = base.toLowerCase();
+
+  const dates = Array.from({ length: 8 }, (_, i) =>
+    format(subDays(new Date(), 7 - i), "yyyy-MM-dd")
+  );
+
+  const dailySnapshots = await Promise.all(
+    dates.map(async (date) => {
+      try {
+        const res = await fetch(
+          `${FAWAZ_API}@${date}/v1/currencies/${baseLower}.min.json`,
+          { next: { revalidate: 1800 } }
+        );
+        if (!res.ok) return null;
+
+        const data = await res.json();
+        const ratesObj = data[baseLower] as Record<string, number> | undefined;
+        if (!ratesObj) return null;
+
+        const normalized: Record<string, number> = {};
+        for (const [code, rate] of Object.entries(ratesObj)) {
+          normalized[code.toUpperCase()] = rate;
+        }
+        return normalized;
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  const change24h: Record<string, number> = {};
+  const sparklines: Record<string, number[]> = {};
+  const volatility: Record<string, number> = {};
+
+  for (const code of codes) {
+    const current = latest.rates[code];
+    if (!current || current <= 0) continue;
+
+    const series: number[] = [];
+    for (const snap of dailySnapshots) {
+      const value = snap?.[code];
+      if (typeof value === "number" && value > 0) {
+        series.push(value);
+      }
+    }
+
+    if (series.length === 0 || series[series.length - 1] !== current) {
+      series.push(current);
+    }
+
+    sparklines[code] = series.slice(-12);
+
+    const previous =
+      series.length >= 2 ? series[series.length - 2] : series[0];
+    change24h[code] =
+      previous && previous > 0 ? ((current - previous) / previous) * 100 : 0;
+
+    volatility[code] = computeVolatilityFromSeries(series);
+  }
+
+  return {
+    base,
+    change24h,
+    sparklines,
+    volatility,
+    updatedAt: latest.time_last_update_unix * 1000,
+  };
 }
 
 export async function fetchRatesForDate(

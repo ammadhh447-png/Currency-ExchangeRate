@@ -31,7 +31,7 @@ export function CurrencySelect({
   instanceId,
   variant = "default",
 }: CurrencySelectProps) {
-  const { data, isLoading } = useLatestRates();
+  const { data, isLoading } = useLatestRates("USD", true);
 
   const currencies = useMemo(() => {
     if (!data) return [];

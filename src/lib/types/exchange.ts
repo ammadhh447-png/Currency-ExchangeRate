@@ -1,3 +1,11 @@
+export interface RatesMetadataResponse {
+  base: string;
+  change24h: Record<string, number>;
+  sparklines: Record<string, number[]>;
+  volatility: Record<string, number>;
+  updatedAt: number;
+}
+
 export interface ExchangeRatesResponse {
   result: string;
   base_code: string;
@@ -43,9 +51,14 @@ export interface RateStats {
   changePercent: number;
 }
 
+export type TickDirection = "up" | "down" | "flat";
+
 export interface CurrencyRate {
   code: string;
   rate: number;
+  displayRate: number;
   change24h: number;
+  sessionChange: number;
+  tickDirection: TickDirection;
   sparkline: number[];
 }

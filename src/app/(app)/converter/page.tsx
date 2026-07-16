@@ -2,6 +2,7 @@
 
 import { AppHeader } from "@/components/layout/app-header";
 import { ConverterField } from "@/components/converter/converter-field";
+import { LiveRateValue } from "@/components/shared/live-rate-value";
 import { ChangeBadge } from "@/components/shared/change-badge";
 import { RecentConversionsPanel } from "@/components/converter/recent-conversions";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,7 @@ export default function ConverterPage() {
   const [from, setFrom] = useState("USD");
   const [to, setTo] = useState("EUR");
   const [amount, setAmount] = useState("1000");
-  const { rate, isLoading } = useConversionRate(from, to);
+  const { rate, change24h, tickDirection, isLoading } = useConversionRate(from, to);
   const { history, addConversion } = useConversionHistory();
   const shareInProgress = useRef(false);
   const [isSharing, setIsSharing] = useState(false);
@@ -132,9 +133,15 @@ export default function ConverterPage() {
                     Mid-market rate
                   </span>
                   <span className="font-medium">
-                    1 {from} = {formatRate(rate)} {to}
+                    1 {from} ={" "}
+                    <LiveRateValue
+                      value={rate}
+                      direction={tickDirection}
+                      className="inline-flex"
+                    />{" "}
+                    {to}
                   </span>
-                  <ChangeBadge value={0.12} />
+                  <ChangeBadge value={change24h} />
                 </div>
               )}
 

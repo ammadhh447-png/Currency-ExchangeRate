@@ -5,6 +5,7 @@ import { HistoricalChart } from "@/components/shared/historical-chart";
 import { ChangeBadge } from "@/components/shared/change-badge";
 import { CurrencyFlag } from "@/components/shared/currency-flag";
 import { ErrorState } from "@/components/shared/error-state";
+import { LiveRateValue } from "@/components/shared/live-rate-value";
 import { PageSkeleton } from "@/components/shared/loading-skeleton";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,6 +15,7 @@ import { getCurrencyMeta } from "@/lib/constants/currencies";
 import { formatRate } from "@/lib/utils/format";
 import { Star } from "lucide-react";
 import { useMemo } from "react";
+import { format } from "date-fns";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -21,7 +23,7 @@ import Link from "next/link";
 export default function CurrencyDetailsPage() {
   const params = useParams();
   const code = (params.code as string)?.toUpperCase() ?? "USD";
-  const { currencyRates, isLoading, isError, refetch } = useCurrencyRates();
+  const { currencyRates, isLoading, isError, refetch } = useCurrencyRates("USD", true);
   const { toggleFavorite, isFavorite } = useFavorites();
   const { data: histData, isLoading: histLoading } = useHistoricalRates(
     "USD",
@@ -31,19 +33,33 @@ export default function CurrencyDetailsPage() {
 
   const meta = getCurrencyMeta(code);
   const rateInfo = currencyRates.find((c) => c.code === code);
-  const rate = code === "USD" ? 1 : rateInfo?.rate ?? 0;
+  const rate = code === "USD" ? 1 : rateInfo?.displayRate ?? 0;
   const change = rateInfo?.change24h ?? 0;
+  const tickDirection = rateInfo?.tickDirection ?? "flat";
 
   const chartData = useMemo(() => {
     if (!histData?.rates) return [];
     const target = code === "USD" ? "EUR" : code;
-    return Object.entries(histData.rates)
+    const points = Object.entries(histData.rates)
       .map(([date, rates]) => ({
         date,
         rate: rates[target] ?? 0,
       }))
+      .filter((p) => p.rate > 0)
       .sort((a, b) => a.date.localeCompare(b.date));
-  }, [histData, code]);
+
+    if (rate > 0 && points.length > 0) {
+      const today = format(new Date(), "yyyy-MM-dd");
+      const last = points[points.length - 1];
+      if (last.date === today) {
+        points[points.length - 1] = { date: today, rate };
+      } else {
+        points.push({ date: today, rate });
+      }
+    }
+
+    return points;
+  }, [histData, code, rate]);
 
   const facts = [
     { label: "Currency Code", value: meta.code },
@@ -112,7 +128,7 @@ export default function CurrencyDetailsPage() {
         </div>
 
         <p className="mb-8 text-4xl font-bold tracking-tight sm:text-5xl">
-          {formatRate(rate)}{" "}
+          <LiveRateValue value={rate} direction={tickDirection} />{" "}
           <span className="text-lg font-normal text-muted-foreground">USD</span>
         </p>
 

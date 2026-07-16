@@ -75,13 +75,14 @@ src/
 
 ## API Sources
 
-| Purpose | Provider |
-|---------|----------|
-| Live rates | [open.er-api.com](https://open.er-api.com) |
-| Historical (primary) | [Frankfurter](https://www.frankfurter.app) |
-| Historical (fallback) | [@fawazahmed0/currency-api](https://github.com/fawazahmed0/currency-api) |
+| Purpose | Provider | Update frequency |
+|---------|----------|------------------|
+| Live rates (primary) | [exchangerate.fun](https://api.exchangerate.fun) | Hourly |
+| Live rates (fallback) | [open.er-api.com](https://open.er-api.com) | Daily |
+| Historical (primary) | [Frankfurter](https://www.frankfurter.app) | Daily |
+| Historical (fallback) | [@fawazahmed0/currency-api](https://github.com/fawazahmed0/currency-api) | Daily |
 
-API keys are not required for the free endpoints used by this project.
+Live pages poll every **5 seconds**. Rates tick every **1 second** with volatility-based movement anchored to the latest API values. 24h change and sparklines use real historical snapshots.
 
 ## Responsive Design
 

@@ -3,6 +3,9 @@
 import { AppHeader } from "@/components/layout/app-header";
 import { ChangeBadge } from "@/components/shared/change-badge";
 import { CurrencyFlag } from "@/components/shared/currency-flag";
+import { LiveRateValue } from "@/components/shared/live-rate-value";
+import { LiveRatesIndicator } from "@/components/shared/live-rates-indicator";
+import { Sparkline } from "@/components/shared/sparkline";
 import { SearchInput } from "@/components/shared/search-input";
 import { TableSkeleton } from "@/components/shared/loading-skeleton";
 import { Button } from "@/components/ui/button";
@@ -24,7 +27,6 @@ import {
 import { useCurrencyRates } from "@/hooks/use-exchange-rates";
 import { useFavorites } from "@/hooks/use-favorites";
 import { getCurrencyMeta } from "@/lib/constants/currencies";
-import { formatRate } from "@/lib/utils/format";
 import { Star, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -33,7 +35,7 @@ type SortOption = "code" | "rate" | "change";
 
 export default function FavoritesPage() {
   const { favorites, loaded, removeFavorite } = useFavorites();
-  const { currencyRates, isLoading } = useCurrencyRates();
+  const { currencyRates, isLoading, isFetching, refetch } = useCurrencyRates("USD", true);
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("code");
 
@@ -43,8 +45,10 @@ export default function FavoritesPage() {
       return {
         code,
         meta: getCurrencyMeta(code),
-        rate: cr?.rate ?? (code === "USD" ? 1 : 0),
+        rate: cr?.displayRate ?? (code === "USD" ? 1 : 0),
         change: cr?.change24h ?? 0,
+        tickDirection: cr?.tickDirection ?? "flat",
+        sparkline: cr?.sparkline ?? [],
       };
     });
 
@@ -90,26 +94,32 @@ export default function FavoritesPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <SearchInput
                 value={search}
                 onChange={setSearch}
                 placeholder="Search favorites..."
                 className="flex-1"
               />
-              <Select
-                value={sortBy}
-                onValueChange={(v) => v && setSortBy(v as SortOption)}
-              >
-                <SelectTrigger className="w-full sm:w-44">
-                  <SelectValue placeholder="Sort by" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="code">Sort: Code A–Z</SelectItem>
-                  <SelectItem value="rate">Sort: Highest rate</SelectItem>
-                  <SelectItem value="change">Sort: 24h change</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="flex flex-wrap items-center gap-3">
+                <LiveRatesIndicator
+                  isFetching={isFetching}
+                  onRefresh={() => refetch()}
+                />
+                <Select
+                  value={sortBy}
+                  onValueChange={(v) => v && setSortBy(v as SortOption)}
+                >
+                  <SelectTrigger className="w-full sm:w-44">
+                    <SelectValue placeholder="Sort by" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="code">Sort: Code A–Z</SelectItem>
+                    <SelectItem value="rate">Sort: Highest rate</SelectItem>
+                    <SelectItem value="change">Sort: 24h change</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             {items.length === 0 ? (
@@ -128,6 +138,7 @@ export default function FavoritesPage() {
                       <TableHead>Currency</TableHead>
                       <TableHead className="text-right">Rate (USD)</TableHead>
                       <TableHead className="text-right">24h Change</TableHead>
+                      <TableHead className="w-28">Trend</TableHead>
                       <TableHead className="w-12" />
                     </TableRow>
                   </TableHeader>
@@ -149,11 +160,21 @@ export default function FavoritesPage() {
                             </span>
                           </Link>
                         </TableCell>
-                        <TableCell className="text-right font-mono text-sm">
-                          {formatRate(item.rate)}
+                        <TableCell className="text-right text-sm">
+                          <LiveRateValue
+                            value={item.rate}
+                            direction={item.tickDirection}
+                          />
                         </TableCell>
                         <TableCell className="text-right">
                           <ChangeBadge value={item.change} />
+                        </TableCell>
+                        <TableCell>
+                          <Sparkline
+                            data={item.sparkline}
+                            positive={item.change >= 0}
+                            height={28}
+                          />
                         </TableCell>
                         <TableCell>
                           <Button

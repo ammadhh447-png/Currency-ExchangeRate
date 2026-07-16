@@ -62,6 +62,7 @@ export function generateSparkline(
   changePercent: number,
   points = 12
 ): number[] {
+  if (currentRate <= 0) return [];
   const startRate = currentRate / (1 + changePercent / 100);
   const step = (currentRate - startRate) / (points - 1);
   return Array.from({ length: points }, (_, i) => {
@@ -69,6 +70,60 @@ export function generateSparkline(
     const noise = base * (Math.sin(i * 1.7) * 0.003);
     return base + noise;
   });
+}
+
+export function normalizeSparkline(data: number[], minPoints = 2): number[] {
+  const valid = data.filter(
+    (v) => typeof v === "number" && Number.isFinite(v) && v > 0
+  );
+  if (valid.length === 0) return [];
+  if (valid.length >= minPoints) return valid;
+  const last = valid[valid.length - 1];
+  return Array.from({ length: minPoints }, () => last);
+}
+
+export function buildCrossSparkline(
+  fromSeries: number[],
+  toSeries: number[],
+  from: string,
+  to: string,
+  base = "USD",
+  liveRate?: number
+): number[] {
+  const len = Math.max(fromSeries.length, toSeries.length, 1);
+  const result: number[] = [];
+
+  for (let i = 0; i < len; i++) {
+    const fromRate =
+      from === base
+        ? 1
+        : (fromSeries[i] ??
+          fromSeries[fromSeries.length - 1] ??
+          fromSeries[0] ??
+          0);
+    const toRate =
+      to === base
+        ? 1
+        : (toSeries[i] ?? toSeries[toSeries.length - 1] ?? toSeries[0] ?? 0);
+
+    if (fromRate > 0 && toRate > 0) {
+      result.push(toRate / fromRate);
+    }
+  }
+
+  if (liveRate != null && liveRate > 0) {
+    if (result.length === 0) result.push(liveRate);
+    else result[result.length - 1] = liveRate;
+  }
+
+  return normalizeSparkline(result);
+}
+
+export function sparklineChangePercent(series: number[]): number {
+  if (series.length < 2) return 0;
+  const previous = series[series.length - 2];
+  const current = series[series.length - 1];
+  return previous > 0 ? ((current - previous) / previous) * 100 : 0;
 }
 
 export function seededChange(code: string): number {

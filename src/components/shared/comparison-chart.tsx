@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import {
   LineChart,
   ResponsiveContainer,
@@ -43,6 +44,25 @@ function lastValue(data: ComparisonRow[], code: string): number | null {
 
 function formatSignedPercent(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+function getPercentDomain(data: ComparisonRow[], series: ComparisonSeries[]): [number, number] {
+  const values: number[] = [];
+  for (const row of data) {
+    for (const { code } of series) {
+      const v = row[code];
+      if (typeof v === "number") values.push(v);
+    }
+  }
+  if (values.length === 0) return [-1, 1];
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  if (min === max) {
+    const pad = Math.max(Math.abs(min) * 0.1, 0.5);
+    return [min - pad, max + pad];
+  }
+  const pad = (max - min) * 0.12;
+  return [min - pad, max + pad];
 }
 
 function ChartTooltip({
@@ -99,6 +119,8 @@ export function ComparisonChart({
   className,
   height = 320,
 }: ComparisonChartProps) {
+  const yDomain = useMemo(() => getPercentDomain(data, series), [data, series]);
+
   if (data.length === 0 || series.length === 0) {
     return (
       <div
@@ -160,7 +182,7 @@ export function ComparisonChart({
               tickLine={false}
               axisLine={false}
               width={52}
-              domain={["auto", "auto"]}
+              domain={yDomain}
               tickFormatter={(v) =>
                 `${v > 0 ? "+" : ""}${Number(v).toFixed(0)}%`
               }

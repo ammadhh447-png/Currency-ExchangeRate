@@ -128,3 +128,33 @@
     @apply font-sans;
   }
 }
+
+@keyframes live-rate-up {
+  0% {
+    background-color: rgb(16 185 129 / 0.25);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+@keyframes live-rate-down {
+  0% {
+    background-color: rgb(239 68 68 / 0.25);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.live-rate-flash-up {
+  animation: live-rate-up 0.8s ease-out;
+  border-radius: 0.25rem;
+  padding-inline: 0.125rem;
+}
+
+.live-rate-flash-down {
+  animation: live-rate-down 0.8s ease-out;
+  border-radius: 0.25rem;
+  padding-inline: 0.125rem;
+}

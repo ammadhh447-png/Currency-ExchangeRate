@@ -10,14 +10,19 @@ import { ErrorState } from "@/components/shared/error-state";
 import { PageSkeleton } from "@/components/shared/loading-skeleton";
 import { LiveRatesIndicator } from "@/components/shared/live-rates-indicator";
 import { SearchInput } from "@/components/shared/search-input";
+import { LiveRateValue } from "@/components/shared/live-rate-value";
 import { useCurrencyRates } from "@/hooks/use-exchange-rates";
 import {
   POPULAR_CURRENCIES,
   POPULAR_PAIRS,
   getCurrencyMeta,
 } from "@/lib/constants/currencies";
-import { formatRate } from "@/lib/utils/format";
-import { getCrossRate } from "@/lib/utils/currency";
+import type { TickDirection } from "@/lib/types/exchange";
+import {
+  getCrossRate,
+  buildCrossSparkline,
+  sparklineChangePercent,
+} from "@/lib/utils/currency";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -43,12 +48,32 @@ export default function DashboardPage() {
 
   const pairCards = useMemo(() => {
     if (!data) return [];
+    const byCode = new Map(currencyRates.map((c) => [c.code, c]));
+    const liveRates = Object.fromEntries(
+      currencyRates.map((c) => [c.code, c.displayRate])
+    );
+
     return POPULAR_PAIRS.map(({ from, to }) => {
-      const rate = getCrossRate(data.rates, from, to, data.base_code);
-      const change = currencyRates.find((c) => c.code === to)?.change24h ?? 0;
-      const sparkline =
-        currencyRates.find((c) => c.code === to)?.sparkline ?? [];
-      return { from, to, rate, change, sparkline };
+      const fromInfo = byCode.get(from);
+      const toInfo = byCode.get(to);
+      const rate = getCrossRate(liveRates, from, to, data.base_code);
+      const sparkline = buildCrossSparkline(
+        fromInfo?.sparkline ?? (from === data.base_code ? [1] : []),
+        toInfo?.sparkline ?? (to === data.base_code ? [1] : []),
+        from,
+        to,
+        data.base_code,
+        rate
+      );
+      const change = sparklineChangePercent(sparkline);
+      const tickDirection: TickDirection =
+        toInfo?.tickDirection === "up" || fromInfo?.tickDirection === "down"
+          ? "up"
+          : toInfo?.tickDirection === "down" || fromInfo?.tickDirection === "up"
+            ? "down"
+            : "flat";
+
+      return { from, to, rate, change, sparkline, tickDirection };
     });
   }, [data, currencyRates]);
 
@@ -58,8 +83,9 @@ export default function DashboardPage() {
       return {
         code,
         meta: getCurrencyMeta(code),
-        rate: cr?.rate ?? (code === "USD" ? 1 : 0),
+        rate: cr?.displayRate ?? (code === "USD" ? 1 : 0),
         change: cr?.change24h ?? 0,
+        tickDirection: cr?.tickDirection ?? "flat",
       };
     }).filter((c) => c.rate > 0);
   }, [currencyRates]);
@@ -75,9 +101,11 @@ export default function DashboardPage() {
   }, [popular, search]);
 
   const gainers = [...currencyRates]
+    .filter((c) => c.sparkline.length >= 2)
     .sort((a, b) => b.change24h - a.change24h)
     .slice(0, 5);
   const losers = [...currencyRates]
+    .filter((c) => c.sparkline.length >= 2)
     .sort((a, b) => a.change24h - b.change24h)
     .slice(0, 5);
 
@@ -124,7 +152,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {pairCards.map(({ from, to, rate, change, sparkline }) => (
+          {pairCards.map(({ from, to, rate, change, sparkline, tickDirection }) => (
             <Card key={`${from}-${to}`}>
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
@@ -133,7 +161,9 @@ export default function DashboardPage() {
                   </p>
                   <ChangeBadge value={change} />
                 </div>
-                <p className="mt-1 text-2xl font-bold">{formatRate(rate)}</p>
+                <p className="mt-1 text-2xl font-bold">
+                  <LiveRateValue value={rate} direction={tickDirection} />
+                </p>
                 <Sparkline
                   data={sparkline}
                   positive={change >= 0}
@@ -162,7 +192,7 @@ export default function DashboardPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map(({ code, meta, rate, change }) => (
+                  {filtered.map(({ code, meta, rate, change, tickDirection }) => (
                     <TableRow key={code}>
                       <TableCell>
                         <Link
@@ -176,8 +206,12 @@ export default function DashboardPage() {
                           </span>
                         </Link>
                       </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        {formatRate(rate)}
+                      <TableCell className="text-right text-sm">
+                        <LiveRateValue
+                          value={rate}
+                          direction={tickDirection}
+                          className="justify-end"
+                        />
                       </TableCell>
                       <TableCell className="text-right">
                         <ChangeBadge value={change} />

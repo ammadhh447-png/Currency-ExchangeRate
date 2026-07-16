@@ -1,5 +1,7 @@
 "use client";
 
+import { useMemo } from "react";
+import { format } from "date-fns";
 import { AppHeader } from "@/components/layout/app-header";
 import {
   ComparisonChart,
@@ -7,6 +9,7 @@ import {
   type ComparisonSeries,
 } from "@/components/shared/comparison-chart";
 import { CurrencySelect } from "@/components/shared/currency-select";
+import { LiveRateValue } from "@/components/shared/live-rate-value";
 import { ChangeBadge } from "@/components/shared/change-badge";
 import { CurrencyFlag } from "@/components/shared/currency-flag";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,7 +18,7 @@ import { useCurrencyRates, useHistoricalRates } from "@/hooks/use-exchange-rates
 import { getCurrencyMeta } from "@/lib/constants/currencies";
 import { formatRate } from "@/lib/utils/format";
 import type { HistoricalRatesResponse, TimePeriod } from "@/lib/types/exchange";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 const SERIES_COLORS = ["#3B82F6", "#10B981", "#F59E0B"];
 
@@ -30,7 +33,7 @@ function extractPoints(
   histData: HistoricalRatesResponse | undefined,
   code: string
 ): { date: string; rate: number }[] {
-  if (!histData?.rates) return [];
+  if (!histData?.rates || code === "USD") return [];
   return Object.entries(histData.rates)
     .map(([date, rates]) => ({ date, rate: rates[code] ?? 0 }))
     .filter((p) => p.rate > 0)
@@ -40,11 +43,23 @@ function extractPoints(
 export default function ComparePage() {
   const [currencies, setCurrencies] = useState(["USD", "EUR", "GBP"]);
   const [period, setPeriod] = useState<TimePeriod>("30d");
-  const { currencyRates } = useCurrencyRates();
+  const { currencyRates } = useCurrencyRates("USD", true);
 
-  const q0 = useHistoricalRates("USD", currencies[0], period);
-  const q1 = useHistoricalRates("USD", currencies[1], period);
-  const q2 = useHistoricalRates("USD", currencies[2], period);
+  const q0 = useHistoricalRates(
+    "USD",
+    currencies[0] === "USD" ? "EUR" : currencies[0],
+    period
+  );
+  const q1 = useHistoricalRates(
+    "USD",
+    currencies[1] === "USD" ? "EUR" : currencies[1],
+    period
+  );
+  const q2 = useHistoricalRates(
+    "USD",
+    currencies[2] === "USD" ? "EUR" : currencies[2],
+    period
+  );
   const queries = [q0, q1, q2];
 
   const compared = useMemo(() => {
@@ -53,8 +68,9 @@ export default function ComparePage() {
       return {
         code,
         meta: getCurrencyMeta(code),
-        rate: cr?.rate ?? (code === "USD" ? 1 : 0),
+        rate: cr?.displayRate ?? (code === "USD" ? 1 : 0),
         change24h: cr?.change24h ?? 0,
+        tickDirection: cr?.tickDirection ?? "flat",
       };
     });
   }, [currencies, currencyRates]);
@@ -74,14 +90,31 @@ export default function ComparePage() {
   const chartData = useMemo<ComparisonRow[]>(() => {
     const rebased = new Map<string, Map<string, number>>();
     const dateSet = new Set<string>();
+    const today = format(new Date(), "yyyy-MM-dd");
 
     currencies.forEach((code, i) => {
       if (code === "USD") return;
       const points = extractPoints(queries[i].data, code);
       if (points.length === 0) return;
-      const base = points[0].rate;
+
+      const liveRate = currencyRates.find((c) => c.code === code)?.displayRate;
+      const enriched =
+        liveRate && liveRate > 0
+          ? (() => {
+              const copy = [...points];
+              const last = copy[copy.length - 1];
+              if (last.date === today) {
+                copy[copy.length - 1] = { date: today, rate: liveRate };
+              } else {
+                copy.push({ date: today, rate: liveRate });
+              }
+              return copy;
+            })()
+          : points;
+
+      const base = enriched[0].rate;
       const perDate = new Map<string, number>();
-      for (const p of points) {
+      for (const p of enriched) {
         perDate.set(p.date, (p.rate / base - 1) * 100);
         dateSet.add(p.date);
       }
@@ -102,7 +135,7 @@ export default function ComparePage() {
       }
       return row;
     });
-  }, [currencies, series, q0.data, q1.data, q2.data]);
+  }, [currencies, series, currencyRates, q0.data, q1.data, q2.data]);
 
   const isLoading = queries.some((q) => q.isLoading);
 
@@ -150,7 +183,11 @@ export default function ComparePage() {
                 <div>
                   <p className="text-xs text-muted-foreground">1 USD equals</p>
                   <p className="text-2xl font-bold">
-                    {formatRate(c.rate)} {c.code}
+                    <LiveRateValue
+                      value={c.rate}
+                      direction={c.tickDirection}
+                    />{" "}
+                    {c.code}
                   </p>
                 </div>
                 <div className="flex items-center justify-between border-t pt-3 text-sm">

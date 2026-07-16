@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { CurrencySelect } from "@/components/shared/currency-select";
 import { ChangeBadge } from "@/components/shared/change-badge";
+import { LiveRateValue } from "@/components/shared/live-rate-value";
 import { useConversionRate } from "@/hooks/use-exchange-rates";
 import { useConversionHistory } from "@/hooks/use-conversion-history";
 import { formatRate } from "@/lib/utils/format";
@@ -26,7 +27,7 @@ export function QuickConverter({
   const [from, setFrom] = useState(defaultFrom);
   const [to, setTo] = useState(defaultTo);
   const [amount, setAmount] = useState("100");
-  const { rate, isLoading } = useConversionRate(from, to);
+  const { rate, change24h, tickDirection, isLoading } = useConversionRate(from, to);
   const { addConversion } = useConversionHistory();
 
   const numAmount = parseFloat(amount) || 0;
@@ -101,7 +102,18 @@ export function QuickConverter({
 
         {rate > 0 && (
           <p className="text-center text-xs text-muted-foreground">
-            1 {from} = {formatRate(rate)} {to}
+            1 {from} ={" "}
+            <LiveRateValue
+              value={rate}
+              direction={tickDirection}
+              className="inline-flex"
+            />{" "}
+            {to}
+            {change24h !== 0 && (
+              <span className="ml-2">
+                <ChangeBadge value={change24h} />
+              </span>
+            )}
           </p>
         )}
 

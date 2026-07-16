@@ -8,6 +8,7 @@ import { ErrorState } from "@/components/shared/error-state";
 import { TableSkeleton } from "@/components/shared/loading-skeleton";
 import { Pagination } from "@/components/shared/pagination";
 import { LiveRatesIndicator } from "@/components/shared/live-rates-indicator";
+import { LiveRateValue } from "@/components/shared/live-rate-value";
 import { SearchInput } from "@/components/shared/search-input";
 import {
   Table,
@@ -58,7 +59,7 @@ export default function LiveRatesPage() {
     items.sort((a, b) => {
       let cmp = 0;
       if (sortKey === "code") cmp = a.code.localeCompare(b.code);
-      else if (sortKey === "rate") cmp = a.rate - b.rate;
+      else if (sortKey === "rate") cmp = a.displayRate - b.displayRate;
       else cmp = a.change24h - b.change24h;
       return sortAsc ? cmp : -cmp;
     });
@@ -182,8 +183,11 @@ export default function LiveRatesPage() {
                             </div>
                           </Link>
                         </TableCell>
-                        <TableCell className="text-right font-mono text-sm">
-                          {formatRate(c.rate)}
+                        <TableCell className="text-right text-sm">
+                          <LiveRateValue
+                            value={c.displayRate}
+                            direction={c.tickDirection}
+                          />
                         </TableCell>
                         <TableCell className="text-right">
                           <ChangeBadge value={c.change24h} />
